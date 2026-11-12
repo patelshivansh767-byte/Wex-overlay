@@ -7,24 +7,78 @@ jobs:
       - uses: actions/checkout@v4
       - name: Fix and Patch
         run: |
-          unzip -o "*.zip" -d src
+          if [ -f "WexArmoury-Android-Project.zip" ]; then
+            unzip -o "WexArmoury-Android-Project.zip" -d src
+          else
+            for z in *.zip; do unzip -o "$z" -d src; done
+          fi
           DIR=$(dirname "$(find src -name "settings.gradle*" | head -n 1)")
           echo "DIR=$DIR" >> $GITHUB_ENV
-          python3 -c '
-          import glob
-          for p in glob.glob("src/**/*.*", recursive=True):
-            if p.endswith((".gradle", ".java", ".pro")):
-              t = open(p, errors="ignore").read()
-              for L in t.splitlines():
-                if "freeRamMb\":1850" in L and "return" in L: t = t.replace(L, "return \"{}\";")
-              if "FloatingOverlayService" in p:
-                b = "hudLayout.addView(nudgeRow);\nButton r=new Button(this);r.setText(\"RETICLE: ON/OFF\");r.setOnClickListener(v->{if(crosshairView!=null)crosshairView.setVisibility(crosshairView.getVisibility()==0?8:0);});hudLayout.addView(r);\nButton s=new Button(this);s.setText(\"STOP OVERLAY\");s.setOnClickListener(v->stopSelf());hudLayout.addView(s);"
-                t = t.replace("hudLayout.addView(nudgeRow);", b)
-              d = t.count("{") - t.count("}")
-              open(p, "w").write(t + ("\n}" * d if d > 0 else ""))
-            if p.endswith("AndroidManifest.xml"):
-              open(p, "w").write(open(p).read().replace("package=\"com.wex.armoury\"", ""))
-          '
+          python3 - "$DIR" << 'EOF'
+          import sys, os, glob
+          r = sys.argv[1]
+
+          open(f"{r}/settings.gradle", "w").write('pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = "WexArmoury"\ninclude ":app"\n')
+          open(f"{r}/build.gradle", "w").write('plugins { id "com.android.application" version "8.2.2" apply false }\n')
+          open(f"{r}/app/build.gradle", "w").write('plugins { id "com.android.application" }\nandroid {\n namespace "com.wex.armoury"\n compileSdk 34\n defaultConfig { applicationId "com.wex.armoury"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }\n compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }\n}\ndependencies {\n implementation "androidx.appcompat:appcompat:1.6.1"\n implementation "com.google.android.material:material:1.11.0"\n}\n')
+
+          open(f"{r}/app/src/main/AndroidManifest.xml", "w").write('''<?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+              <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+              <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="@string/app_name"
+                  android:roundIcon="@android:drawable/sym_def_app_icon"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.WexArmoury">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait"
+                      android:hardwareAccelerated="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".FloatingOverlayService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="gaming_hud_overlay" />
+                  </service>
+              </application>
+          </manifest>''')
+
+          for p in glob.glob(f"{r}/**/*.java", recursive=True):
+            t = open(p, errors="ignore").read()
+            for L in t.splitlines():
+              if 'freeRamMb":1850' in L and "return" in L: t = t.replace(L, 'return "{}";')
+              if "closeBtn.setText(" in L: t = t.replace(L, 'closeBtn.setText("X");')
+            if "FloatingOverlayService" in p:
+              b = 'hudLayout.addView(nudgeRow);\nButton r=new Button(this);r.setText("RETICLE: ON/OFF");r.setOnClickListener(v->{if(crosshairView!=null)crosshairView.setVisibility(crosshairView.getVisibility()==0?8:0);});hudLayout.addView(r);\nButton s=new Button(this);s.setText("STOP OVERLAY");s.setOnClickListener(v->stopSelf());hudLayout.addView(s);'
+              t = t.replace("hudLayout.addView(nudgeRow);", b)
+            d = t.count("{") - t.count("}")
+            open(p, "w").write(t + ("\n}" * d if d > 0 else ""))
+          EOF
       - uses: actions/setup-java@v4
         with: { distribution: 'temurin', java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
