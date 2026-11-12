@@ -18,9 +18,13 @@ jobs:
           import sys, os, glob
           r = sys.argv[1]
 
+          os.makedirs(f"{r}/app/src/main/res/values", exist_ok=True)
           open(f"{r}/settings.gradle", "w").write('pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = "WexArmoury"\ninclude ":app"\n')
           open(f"{r}/build.gradle", "w").write('plugins { id "com.android.application" version "8.2.2" apply false }\n')
           open(f"{r}/app/build.gradle", "w").write('plugins { id "com.android.application" }\nandroid {\n namespace "com.wex.armoury"\n compileSdk 34\n defaultConfig { applicationId "com.wex.armoury"; minSdk 24; targetSdk 34; versionCode 1; versionName "1.0" }\n compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }\n}\ndependencies {\n implementation "androidx.appcompat:appcompat:1.6.1"\n implementation "com.google.android.material:material:1.11.0"\n}\n')
+
+          open(f"{r}/app/src/main/res/values/strings.xml", "w").write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">WEX ARMOURY</string>\n</resources>\n')
+          open(f"{r}/app/src/main/res/values/styles.xml", "w").write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <style name="Theme.WexArmoury" parent="Theme.MaterialComponents.NoActionBar">\n        <item name="android:statusBarColor">#08090C</item>\n        <item name="android:navigationBarColor">#08090C</item>\n        <item name="android:windowBackground">#08090C</item>\n        <item name="android:windowLightStatusBar">false</item>\n    </style>\n</resources>\n')
 
           open(f"{r}/app/src/main/AndroidManifest.xml", "w").write('''<?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
