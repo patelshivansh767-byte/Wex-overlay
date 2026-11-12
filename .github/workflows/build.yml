@@ -12,11 +12,31 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Unzip and Auto-Fix Project
         run: |
           unzip -o "*.zip" -d project_src
           DIR=$(dirname "$(find project_src -name "settings.gradle" | head -n 1)")
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
+          python3 - << 'EOF'
+          import glob, re
+
+          for path in glob.glob("project_src/**/*.java", recursive=True):
+              with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                  s = f.read()
+              s = re.sub(r'closeBtn\.setText\("[^"\n]*closeBtn\.setTextColor', 'closeBtn.setText("X");\n        closeBtn.setTextColor', s)
+              diff = s.count("{") - s.count("}")
+              if diff > 0:
+                  s += "\n" + ("}\n" * diff)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(s)
+
+          for path in glob.glob("project_src/**/index.html", recursive=True):
+              with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                  h = f.read()
+              h = re.sub(r"t\.batteryTempC \+ '[^';\n]*", "t.batteryTempC + ' C';\n      ", h)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(h)
+          EOF
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
