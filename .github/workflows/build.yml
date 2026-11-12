@@ -12,73 +12,173 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Unzip and Fix All Files
+      - name: Unzip and Prepare Project
         run: |
           unzip -o "*.zip" -d project_src
-          DIR=$(dirname "$(find project_src -name "settings.gradle" | head -n 1)")
+          DIR=$(dirname "$(find project_src -name "settings.gradle*" | head -n 1)")
+          export PROJECT_DIR="$DIR"
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
           python3 - << 'EOF'
-          import glob, re
+          import glob, os
 
-          def fix_braces(s):
-              d = s.count("{") - s.count("}")
-              return s + ("\n" + "}\n" * d if d > 0 else "")
+          root = os.environ["PROJECT_DIR"]
 
-          def fix_java_strings(s):
-              out = []
-              in_str = False
-              i = 0
-              n = len(s)
-              while i < n:
-                  if not in_str and s[i:i+2] == "//":
-                      while i < n and s[i] != "\n":
-                          out.append(s[i])
-                          i += 1
-                      continue
-                  if not in_str and s[i:i+3] == "'\"'":
-                      out.append("'\"'")
-                      i += 3
-                      continue
-                  ch = s[i]
-                  if ch == "\\" and in_str and i + 1 < n:
-                      out.append(s[i:i+2])
-                      i += 2
-                      continue
-                  if ch == '"':
-                      in_str = not in_str
-                      out.append(ch)
-                  elif ch in ("\n", "\r") and in_str:
-                      out.append(" ")
-                  else:
-                      out.append(ch)
-                  i += 1
-              return "".join(out)
+          open(os.path.join(root, "settings.gradle"), "w").write("""pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "WexArmoury"
+          include ':app'
+          """)
 
-          for g in glob.glob("project_src/**/*.gradle*", recursive=True):
-              t = open(g, encoding="utf-8", errors="ignore").read()
-              open(g, "w", encoding="utf-8").write(fix_braces(t))
+          open(os.path.join(root, "build.gradle"), "w").write("""plugins {
+              id 'com.android.application' version '8.2.2' apply false
+          }
+          tasks.register('clean', Delete) {
+              delete rootProject.layout.buildDirectory
+          }
+          """)
 
-          for j in glob.glob("project_src/**/*.java", recursive=True):
+          open(os.path.join(root, "app", "build.gradle"), "w").write("""plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.wex.armoury'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.wex.armoury"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0.0"
+                  testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+                  debug {
+                      applicationIdSuffix ""
+                      debuggable true
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+          }
+          """)
+
+          manifest_path = os.path.join(root, "app", "src", "main", "AndroidManifest.xml")
+          if os.path.exists(manifest_path):
+              m = open(manifest_path, encoding="utf-8", errors="ignore").read()
+              m = m.replace('package="com.wex.armoury"', '')
+              open(manifest_path, "w", encoding="utf-8").write(m)
+
+          for j in glob.glob(os.path.join(root, "**/*.java"), recursive=True):
               t = open(j, encoding="utf-8", errors="ignore").read()
-              t = fix_java_strings(t)
-              t = fix_braces(t)
-              t = t.replace('closeBtn.setText(" ")', 'closeBtn.setText("X")')
-              t = t.replace("window.setDecorFitsSystemWindows(false);", "window.setDecorFitsSystemWindows(true);")
-              t = t.replace("| View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN", "")
-              t = t.replace("WindowManager.LayoutParams.MATCH_PARENT,\n                WindowManager.LayoutParams.MATCH_PARENT,", "dpToPx(96),\n                dpToPx(96),")
-              t = t.replace("startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);", "try { startForeground(NOTIFICATION_ID, notification, 1073741824); } catch (Exception e) { startForeground(NOTIFICATION_ID, notification); }")
-              stop_fn = '@JavascriptInterface public void stopFloatingOverlay() { stopService(new Intent(MainActivity.this, FloatingOverlayService.class)); }\n        @JavascriptInterface\n        public void launchWexMobile'
-              if "public void launchWexMobile" in t and "stopFloatingOverlay" not in t:
-                  t = t.replace("@JavascriptInterface\n        public void launchWexMobile", stop_fn)
+              t = t.replace(
+                  'return "{"freeRamMb":1850,"totalRamMb":4096,"batteryTempC":33.5,"batteryLevel":85,"freeStorageGb":42.5,"totalStorageGb":64.0,"dndActive":false,"overlayActive":false}";',
+                  'return "{\\"freeRamMb\\":1850,\\"totalRamMb\\":4096,\\"batteryTempC\\":33.5,\\"batteryLevel\\":85,\\"freeStorageGb\\":42.5,\\"totalStorageGb\\":64.0,\\"dndActive\\":false,\\"overlayActive\\":false}";'
+              )
+              if "FloatingOverlayService" in j:
+                  t = t.replace(
+                      "private Button btnDaemonLock;",
+                      "private Button btnDaemonLock;\n    private Button btnToggleReticle;"
+                  )
+                  t = t.replace(
+                      'if (obj.has("offsetY")) crosshairOffsetY = obj.getInt("offsetY");',
+                      'if (obj.has("offsetY")) crosshairOffsetY = obj.getInt("offsetY");\n            if (obj.has("enabled") && crosshairView != null) {\n                boolean en = obj.getBoolean("enabled");\n                crosshairView.setVisibility(en ? View.VISIBLE : View.GONE);\n                if (btnToggleReticle != null) {\n                    btnToggleReticle.setText(en ? "RETICLE: ON" : "RETICLE: OFF");\n                    btnToggleReticle.setTextColor(Color.parseColor(en ? "#00E5FF" : "#A0ABC0"));\n                }\n            }'
+                  )
+                  t = t.replace(
+                      '.setOngoing(true)',
+                      '.setOngoing(true).addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP OVERLAY", PendingIntent.getService(this, 1, new Intent(this, FloatingOverlayService.class).setAction(ACTION_STOP_OVERLAY), PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0)))'
+                  )
+                  controls_code = """hudLayout.addView(nudgeRow);
+                  LinearLayout powerRow = new LinearLayout(this);
+                  powerRow.setOrientation(LinearLayout.HORIZONTAL);
+                  powerRow.setPadding(0, dpToPx(8), 0, 0);
+                  btnToggleReticle = new Button(this);
+                  btnToggleReticle.setText("RETICLE: ON");
+                  styleActionButton(btnToggleReticle, "#0E222E", Color.parseColor("#00E5FF"));
+                  LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(0, dpToPx(36), 1f);
+                  rLp.setMarginEnd(dpToPx(4));
+                  btnToggleReticle.setLayoutParams(rLp);
+                  btnToggleReticle.setOnClickListener(v -> {
+                      if (crosshairView != null) {
+                          boolean vis = crosshairView.getVisibility() == View.VISIBLE;
+                          crosshairView.setVisibility(vis ? View.GONE : View.VISIBLE);
+                          btnToggleReticle.setText(vis ? "RETICLE: OFF" : "RETICLE: ON");
+                          btnToggleReticle.setTextColor(Color.parseColor(vis ? "#A0ABC0" : "#00E5FF"));
+                          Toast.makeText(FloatingOverlayService.this, vis ? "Crosshair OFF" : "Crosshair ON", Toast.LENGTH_SHORT).show();
+                      }
+                  });
+                  powerRow.addView(btnToggleReticle);
+                  Button btnStopAll = new Button(this);
+                  btnStopAll.setText("STOP OVERLAY");
+                  styleActionButton(btnStopAll, "#3B0D14", Color.parseColor("#FF2A3C"));
+                  LinearLayout.LayoutParams stopLp = new LinearLayout.LayoutParams(0, dpToPx(36), 1f);
+                  stopLp.setMarginStart(dpToPx(4));
+                  btnStopAll.setLayoutParams(stopLp);
+                  btnStopAll.setOnClickListener(v -> {
+                      Toast.makeText(FloatingOverlayService.this, "Overlay Stopped", Toast.LENGTH_SHORT).show();
+                      stopSelf();
+                  });
+                  powerRow.addView(btnStopAll);
+                  hudLayout.addView(powerRow);"""
+                  t = t.replace("hudLayout.addView(nudgeRow);", controls_code)
+              diff = t.count("{") - t.count("}")
+              if diff > 0:
+                  t += "\n" + "}\n" * diff
               open(j, "w", encoding="utf-8").write(t)
 
-          for h in glob.glob("project_src/**/index.html", recursive=True):
+          for h in glob.glob(os.path.join(root, "**/*.html"), recursive=True):
               html = open(h, encoding="utf-8", errors="ignore").read()
-              html = html.replace('<script type="module" src="/@vite/client"></script>', '')
-              html = html.replace('<script src="/_aistudio-iframe.js?v=1f94f900"></script>', '')
-              html = re.sub(r"document\.getElementById\('topThermal'\)\.textContent\s*=\s*t\.batteryTempC\s*\+[^;]*;", "document.getElementById('topThermal').textContent = t.batteryTempC + ' C';", html)
-              html = re.sub(r"document\.getElementById\('tempVal'\)\.textContent\s*=\s*t\.batteryTempC\s*\+[^;]*;", "document.getElementById('tempVal').textContent = t.batteryTempC + ' C';", html)
-              html = html.replace("if (type === 'overlay') syncReticleToService();", "if (type === 'overlay') { if (state.overlay) syncReticleToService(); else if (state.isNativeBridge && window.AndroidBridge.stopFloatingOverlay) window.AndroidBridge.stopFloatingOverlay(); }")
+              ch_row = """    <div class="switch-row">
+                <div class="switch-info">
+                  <div class="switch-title">Floating Crosshair Layer</div>
+                  <div class="switch-desc">Turn center aim reticle ON or OFF while HUD pill stays active</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="switchCrosshair" checked onchange="onToggleCrosshair(this.checked)">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="switch-row" style="border-bottom:none;">"""
+              html = html.replace('<div class="switch-row" style="border-bottom:none;">', ch_row)
+              html = html.replace("offsetY: 0\n    };", "offsetY: 0,\n      enabled: true\n    };")
+              ch_fn = """    function onToggleCrosshair(enabled) {
+                crosshairConfig.enabled = enabled;
+                var overlaySwitch = document.getElementById("switchOverlay");
+                if (overlaySwitch && overlaySwitch.checked) {
+                  try { bridge.updateCrosshairConfig(JSON.stringify(crosshairConfig)); } catch (err) {}
+                }
+              }
+              function onToggleOverlay(enabled) {"""
+              html = html.replace("function onToggleOverlay(enabled) {", ch_fn)
+              html = html.replace(
+                  'var switchEl = document.getElementById("switchOverlay");',
+                  'window._lastOvToggle = Date.now(); var switchEl = document.getElementById("switchOverlay");'
+              )
+              html = html.replace(
+                  'dndSwitch.checked = !!data.dndActive;\n          }',
+                  'dndSwitch.checked = !!data.dndActive;\n          }\n          var ovSwitch = document.getElementById("switchOverlay");\n          if (ovSwitch && (!window._lastOvToggle || Date.now() - window._lastOvToggle > 2500)) { ovSwitch.checked = !!data.overlayActive; }'
+              )
               open(h, "w", encoding="utf-8").write(html)
           EOF
 
@@ -95,9 +195,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -o pipefail
-          gradle assembleDebug --no-daemon 2>&1 | tee build.log || { grep -n -C 3 "error:" build.log | tail -n 25; exit 1; }
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
