@@ -12,7 +12,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Unzip and Fix All Bugs
+      - name: Unzip and Fix All Files
         run: |
           unzip -o "*.zip" -d project_src
           DIR=$(dirname "$(find project_src -name "settings.gradle" | head -n 1)")
@@ -24,32 +24,60 @@ jobs:
               d = s.count("{") - s.count("}")
               return s + ("\n" + "}\n" * d if d > 0 else "")
 
+          def fix_java_strings(s):
+              out = []
+              in_str = False
+              i = 0
+              n = len(s)
+              while i < n:
+                  if not in_str and s[i:i+2] == "//":
+                      while i < n and s[i] != "\n":
+                          out.append(s[i])
+                          i += 1
+                      continue
+                  if not in_str and s[i:i+3] == "'\"'":
+                      out.append("'\"'")
+                      i += 3
+                      continue
+                  ch = s[i]
+                  if ch == "\\" and in_str and i + 1 < n:
+                      out.append(s[i:i+2])
+                      i += 2
+                      continue
+                  if ch == '"':
+                      in_str = not in_str
+                      out.append(ch)
+                  elif ch in ("\n", "\r") and in_str:
+                      out.append(" ")
+                  else:
+                      out.append(ch)
+                  i += 1
+              return "".join(out)
+
           for g in glob.glob("project_src/**/*.gradle*", recursive=True):
               t = open(g, encoding="utf-8", errors="ignore").read()
               open(g, "w", encoding="utf-8").write(fix_braces(t))
 
-          for j in glob.glob("project_src/**/MainActivity.java", recursive=True):
+          for j in glob.glob("project_src/**/*.java", recursive=True):
               t = open(j, encoding="utf-8", errors="ignore").read()
+              t = fix_java_strings(t)
+              t = fix_braces(t)
+              t = t.replace('closeBtn.setText(" ")', 'closeBtn.setText("X")')
               t = t.replace("window.setDecorFitsSystemWindows(false);", "window.setDecorFitsSystemWindows(true);")
               t = t.replace("| View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN", "")
-              stop_fn = '@JavascriptInterface public void stopFloatingOverlay() { stopService(new Intent(MainActivity.this, FloatingOverlayService.class)); }\n        @JavascriptInterface\n        public void launchWexMobile'
-              if "stopFloatingOverlay" not in t:
-                  t = t.replace("@JavascriptInterface\n        public void launchWexMobile", stop_fn)
-              open(j, "w", encoding="utf-8").write(fix_braces(t))
-
-          for j in glob.glob("project_src/**/FloatingOverlayService.java", recursive=True):
-              t = open(j, encoding="utf-8", errors="ignore").read()
-              t = re.sub(r'closeBtn\.setText\("[^";]*closeBtn\.setTextColor', 'closeBtn.setText("X");\n        closeBtn.setTextColor', t)
               t = t.replace("WindowManager.LayoutParams.MATCH_PARENT,\n                WindowManager.LayoutParams.MATCH_PARENT,", "dpToPx(96),\n                dpToPx(96),")
               t = t.replace("startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);", "try { startForeground(NOTIFICATION_ID, notification, 1073741824); } catch (Exception e) { startForeground(NOTIFICATION_ID, notification); }")
-              open(j, "w", encoding="utf-8").write(fix_braces(t))
+              stop_fn = '@JavascriptInterface public void stopFloatingOverlay() { stopService(new Intent(MainActivity.this, FloatingOverlayService.class)); }\n        @JavascriptInterface\n        public void launchWexMobile'
+              if "public void launchWexMobile" in t and "stopFloatingOverlay" not in t:
+                  t = t.replace("@JavascriptInterface\n        public void launchWexMobile", stop_fn)
+              open(j, "w", encoding="utf-8").write(t)
 
           for h in glob.glob("project_src/**/index.html", recursive=True):
               html = open(h, encoding="utf-8", errors="ignore").read()
               html = html.replace('<script type="module" src="/@vite/client"></script>', '')
               html = html.replace('<script src="/_aistudio-iframe.js?v=1f94f900"></script>', '')
-              html = re.sub(r"t\.batteryTempC \+ '[^';]*document\.getElementById\('topBattery'\)", "t.batteryTempC + ' C';\n      document.getElementById('topBattery')", html)
-              html = re.sub(r"t\.batteryTempC \+ '[^';]*const tempPercent", "t.batteryTempC + ' C';\n      const tempPercent", html)
+              html = re.sub(r"document\.getElementById\('topThermal'\)\.textContent\s*=\s*t\.batteryTempC\s*\+[^;]*;", "document.getElementById('topThermal').textContent = t.batteryTempC + ' C';", html)
+              html = re.sub(r"document\.getElementById\('tempVal'\)\.textContent\s*=\s*t\.batteryTempC\s*\+[^;]*;", "document.getElementById('tempVal').textContent = t.batteryTempC + ' C';", html)
               html = html.replace("if (type === 'overlay') syncReticleToService();", "if (type === 'overlay') { if (state.overlay) syncReticleToService(); else if (state.isNativeBridge && window.AndroidBridge.stopFloatingOverlay) window.AndroidBridge.stopFloatingOverlay(); }")
               open(h, "w", encoding="utf-8").write(html)
           EOF
