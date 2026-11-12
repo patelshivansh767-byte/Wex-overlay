@@ -105,10 +105,12 @@ jobs:
                       'if (obj.has("offsetY")) crosshairOffsetY = obj.getInt("offsetY");',
                       'if (obj.has("offsetY")) crosshairOffsetY = obj.getInt("offsetY");\n            if (obj.has("enabled") && crosshairView != null) {\n                boolean en = obj.getBoolean("enabled");\n                crosshairView.setVisibility(en ? View.VISIBLE : View.GONE);\n                if (btnToggleReticle != null) {\n                    btnToggleReticle.setText(en ? "RETICLE: ON" : "RETICLE: OFF");\n                    btnToggleReticle.setTextColor(Color.parseColor(en ? "#00E5FF" : "#A0ABC0"));\n                }\n            }'
                   )
-                  t = t.replace(
-                      '.setOngoing(true)',
-                      '.setOngoing(true).addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP OVERLAY", PendingIntent.getService(this, 1, new Intent(this, FloatingOverlayService.class).setAction(ACTION_STOP_OVERLAY), PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0)))'
-                  )
+                  stop_pi = """Intent stopIntent = new Intent(this, FloatingOverlayService.class);
+                  stopIntent.setAction(ACTION_STOP_OVERLAY);
+                  PendingIntent stopPi = PendingIntent.getService(this, 1, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)"""
+                  t = t.replace("Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)", stop_pi)
+                  t = t.replace(".setOngoing(true)", '.setOngoing(true)\n                    .addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP OVERLAY", stopPi)')
                   controls_code = """hudLayout.addView(nudgeRow);
                   LinearLayout powerRow = new LinearLayout(this);
                   powerRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -125,7 +127,6 @@ jobs:
                           crosshairView.setVisibility(vis ? View.GONE : View.VISIBLE);
                           btnToggleReticle.setText(vis ? "RETICLE: OFF" : "RETICLE: ON");
                           btnToggleReticle.setTextColor(Color.parseColor(vis ? "#A0ABC0" : "#00E5FF"));
-                          Toast.makeText(FloatingOverlayService.this, vis ? "Crosshair OFF" : "Crosshair ON", Toast.LENGTH_SHORT).show();
                       }
                   });
                   powerRow.addView(btnToggleReticle);
@@ -135,10 +136,7 @@ jobs:
                   LinearLayout.LayoutParams stopLp = new LinearLayout.LayoutParams(0, dpToPx(36), 1f);
                   stopLp.setMarginStart(dpToPx(4));
                   btnStopAll.setLayoutParams(stopLp);
-                  btnStopAll.setOnClickListener(v -> {
-                      Toast.makeText(FloatingOverlayService.this, "Overlay Stopped", Toast.LENGTH_SHORT).show();
-                      stopSelf();
-                  });
+                  btnStopAll.setOnClickListener(v -> stopSelf());
                   powerRow.addView(btnStopAll);
                   hudLayout.addView(powerRow);"""
                   t = t.replace("hudLayout.addView(nudgeRow);", controls_code)
@@ -195,7 +193,9 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle assembleDebug --no-daemon
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon 2>&1 | tee build.log || { grep -n -C 3 "error:" build.log | tail -n 25; exit 1; }
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
