@@ -21,26 +21,25 @@ jobs:
           find "$DIR" -name "*.java" -exec sed -i 's/ServiceInfo\.FOREGROUND_SERVICE_TYPE_SPECIAL_USE/1073741824/g' {} +
           python3 - << 'EOF'
           import glob
+          def odd_q(s):
+              t = s.replace("'\"'", "").replace('\\"', "")
+              return t.count('"') % 2 == 1
           for p in glob.glob("project_src/**/*.java", recursive=True):
-              out = []
-              for line in open(p, encoding="utf-8", errors="ignore"):
-                  clean = line.replace("'\"'", "")
-                  q = clean.count('"') - clean.count('\\"')
-                  if q % 2 == 1:
-                      s = line.rstrip()
-                      if "Toast.makeText" in s and "LENGTH_" not in s:
-                          line = '        Toast.makeText(getApplicationContext(), "WEX Active", Toast.LENGTH_SHORT).show();\n'
-                      elif s.endswith(";"):
-                          line = s[:-1] + '");\n'
-                      elif s.endswith(")"):
-                          line = s[:-1] + '");\n'
-                      else:
-                          line = s + 'X");\n'
-                  out.append(line)
-              txt = "".join(out)
+              lines = open(p, encoding="utf-8", errors="ignore").read().splitlines()
+              out, i = [], 0
+              while i < len(lines):
+                  buf = lines[i]
+                  i += 1
+                  while odd_q(buf) and i < len(lines):
+                      nxt = lines[i].lstrip()
+                      i += 1
+                      sep = "X" if (buf.endswith('"') and nxt.startswith('"')) else " "
+                      buf = buf + sep + nxt
+                  out.append(buf)
+              txt = "\n".join(out) + "\n"
               d = txt.count("{") - txt.count("}")
               if d > 0:
-                  txt += "\n" + ("}\n" * d)
+                  txt += "}\n" * d
               open(p, "w", encoding="utf-8").write(txt)
           EOF
 
