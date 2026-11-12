@@ -39,7 +39,7 @@ jobs:
 
           for j in glob.glob("project_src/**/FloatingOverlayService.java", recursive=True):
               t = open(j, encoding="utf-8", errors="ignore").read()
-              t = re.sub(r'closeBtn\.setText\("[^"\n;]*\n\s*closeBtn\.setTextColor', 'closeBtn.setText("X");\n        closeBtn.setTextColor', t)
+              t = re.sub(r'closeBtn\.setText\("[^";]*closeBtn\.setTextColor', 'closeBtn.setText("X");\n        closeBtn.setTextColor', t)
               t = t.replace("WindowManager.LayoutParams.MATCH_PARENT,\n                WindowManager.LayoutParams.MATCH_PARENT,", "dpToPx(96),\n                dpToPx(96),")
               t = t.replace("startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);", "try { startForeground(NOTIFICATION_ID, notification, 1073741824); } catch (Exception e) { startForeground(NOTIFICATION_ID, notification); }")
               open(j, "w", encoding="utf-8").write(fix_braces(t))
@@ -48,8 +48,8 @@ jobs:
               html = open(h, encoding="utf-8", errors="ignore").read()
               html = html.replace('<script type="module" src="/@vite/client"></script>', '')
               html = html.replace('<script src="/_aistudio-iframe.js?v=1f94f900"></script>', '')
-              html = re.sub(r"t\.batteryTempC \+ '[^'\n;]*document\.getElementById\('topBattery'\)", "t.batteryTempC + ' C';\n      document.getElementById('topBattery')", html)
-              html = re.sub(r"t\.batteryTempC \+ '[^'\n;]*const tempPercent", "t.batteryTempC + ' C';\n      const tempPercent", html)
+              html = re.sub(r"t\.batteryTempC \+ '[^';]*document\.getElementById\('topBattery'\)", "t.batteryTempC + ' C';\n      document.getElementById('topBattery')", html)
+              html = re.sub(r"t\.batteryTempC \+ '[^';]*const tempPercent", "t.batteryTempC + ' C';\n      const tempPercent", html)
               html = html.replace("if (type === 'overlay') syncReticleToService();", "if (type === 'overlay') { if (state.overlay) syncReticleToService(); else if (state.isNativeBridge && window.AndroidBridge.stopFloatingOverlay) window.AndroidBridge.stopFloatingOverlay(); }")
               open(h, "w", encoding="utf-8").write(html)
           EOF
@@ -67,7 +67,9 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle assembleDebug --no-daemon
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon 2>&1 | tee build.log || { grep -n -C 3 "error:" build.log | tail -n 25; exit 1; }
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
