@@ -7,24 +7,26 @@ jobs:
       - uses: actions/checkout@v4
       - name: Fix and Patch
         run: |
-          unzip -o "*.zip" -d src
+          ZIP=$(ls -t *.zip | head -n 1)
+          unzip -o "$ZIP" -d src
           DIR=$(dirname "$(find src -name "settings.gradle*" | head -n 1)")
           echo "DIR=$DIR" >> $GITHUB_ENV
-          python3 -c '
-          import glob
-          for p in glob.glob("src/**/*.*", recursive=True):
-            if p.endswith((".gradle", ".java", ".pro")):
+          python3 - "$DIR" << 'EOF'
+          import sys, os, glob
+          r = sys.argv[1]
+          open(f"{r}/settings.gradle", "w").write('pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = "WexArmoury"\ninclude ":app"\n')
+          open(f"{r}/build.gradle", "w").write('plugins { id "com.android.application" version "8.2.2" apply false }\n')
+          for p in glob.glob(f"{r}/**/*.*", recursive=True):
+            if p.endswith(("app/build.gradle", ".java", ".pro")):
               t = open(p, errors="ignore").read()
               for L in t.splitlines():
-                if "freeRamMb\":1850" in L and "return" in L: t = t.replace(L, "return \"{}\";")
+                if 'freeRamMb":1850' in L and "return" in L: t = t.replace(L, 'return "{}";')
               if "FloatingOverlayService" in p:
-                b = "hudLayout.addView(nudgeRow);\nButton r=new Button(this);r.setText(\"RETICLE: ON/OFF\");r.setOnClickListener(v->{if(crosshairView!=null)crosshairView.setVisibility(crosshairView.getVisibility()==0?8:0);});hudLayout.addView(r);\nButton s=new Button(this);s.setText(\"STOP OVERLAY\");s.setOnClickListener(v->stopSelf());hudLayout.addView(s);"
+                b = 'hudLayout.addView(nudgeRow);\nButton r=new Button(this);r.setText("RETICLE: ON/OFF");r.setOnClickListener(v->{if(crosshairView!=null)crosshairView.setVisibility(crosshairView.getVisibility()==0?8:0);});hudLayout.addView(r);\nButton s=new Button(this);s.setText("STOP OVERLAY");s.setOnClickListener(v->stopSelf());hudLayout.addView(s);'
                 t = t.replace("hudLayout.addView(nudgeRow);", b)
               d = t.count("{") - t.count("}")
               open(p, "w").write(t + ("\n}" * d if d > 0 else ""))
-            if p.endswith("AndroidManifest.xml"):
-              open(p, "w").write(open(p).read().replace("package=\"com.wex.armoury\"", ""))
-          '
+          EOF
       - uses: actions/setup-java@v4
         with: { distribution: 'temurin', java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
