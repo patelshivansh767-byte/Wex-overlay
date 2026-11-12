@@ -17,26 +17,21 @@ jobs:
           unzip -o "*.zip" -d project_src
           DIR=$(dirname "$(find project_src -name "settings.gradle" | head -n 1)")
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
-          python3 - << 'EOF'
+          python3 -c '
           import glob, re
-
-          for path in glob.glob("project_src/**/*.java", recursive=True):
-              with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                  s = f.read()
-              s = re.sub(r'closeBtn\.setText\("[^"\n]*closeBtn\.setTextColor', 'closeBtn.setText("X");\n        closeBtn.setTextColor', s)
-              diff = s.count("{") - s.count("}")
-              if diff > 0:
-                  s += "\n" + ("}\n" * diff)
-              with open(path, "w", encoding="utf-8") as f:
-                  f.write(s)
-
-          for path in glob.glob("project_src/**/index.html", recursive=True):
-              with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                  h = f.read()
-              h = re.sub(r"t\.batteryTempC \+ '[^';\n]*", "t.batteryTempC + ' C';\n      ", h)
-              with open(path, "w", encoding="utf-8") as f:
-                  f.write(h)
-          EOF
+          for p in glob.glob("project_src/**/*.java", recursive=True):
+              s = open(p, encoding="utf-8", errors="ignore").read()
+              s = re.sub(r"closeBtn\.setText\(\"[\s\S]*?closeBtn\.setTextColor", "closeBtn.setText(\"X\");\n        closeBtn.setTextColor", s)
+              d = s.count("{") - s.count("}")
+              if d > 0:
+                  s += "\n" + ("}\n" * d)
+              open(p, "w", encoding="utf-8").write(s)
+          for p in glob.glob("project_src/**/index.html", recursive=True):
+              h = open(p, encoding="utf-8", errors="ignore").read()
+              h = re.sub(r"t\.batteryTempC \+ \x27[\s\S]*?document\.getElementById\(", "t.batteryTempC + \x27 C\x27;\n      document.getElementById(", h)
+              h = re.sub(r"t\.batteryTempC \+ \x27[\s\S]*?const tempPercent", "t.batteryTempC + \x27 C\x27;\n        const tempPercent", h)
+              open(p, "w", encoding="utf-8").write(h)
+          '
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
