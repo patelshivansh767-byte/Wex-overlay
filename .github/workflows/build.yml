@@ -12,35 +12,46 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Unzip and Fix Project
+      - name: Unzip and Fix All Bugs
         run: |
           unzip -o "*.zip" -d project_src
           DIR=$(dirname "$(find project_src -name "settings.gradle" | head -n 1)")
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
-          find "$DIR" -name "build.gradle*" -exec sed -i 's/compileSdk[ =]*3[0-3]/compileSdk 34/g; s/compileSdkVersion[ =]*3[0-3]/compileSdkVersion 34/g' {} +
-          find "$DIR" -name "*.java" -exec sed -i 's/ServiceInfo\.FOREGROUND_SERVICE_TYPE_SPECIAL_USE/1073741824/g' {} +
           python3 - << 'EOF'
-          import glob
-          def odd_q(s):
-              t = s.replace("'\"'", "").replace('\\"', "")
-              return t.count('"') % 2 == 1
-          for p in glob.glob("project_src/**/*.java", recursive=True):
-              lines = open(p, encoding="utf-8", errors="ignore").read().splitlines()
-              out, i = [], 0
-              while i < len(lines):
-                  buf = lines[i]
-                  i += 1
-                  while odd_q(buf) and i < len(lines):
-                      nxt = lines[i].lstrip()
-                      i += 1
-                      sep = "X" if (buf.endswith('"') and nxt.startswith('"')) else " "
-                      buf = buf + sep + nxt
-                  out.append(buf)
-              txt = "\n".join(out) + "\n"
-              d = txt.count("{") - txt.count("}")
-              if d > 0:
-                  txt += "}\n" * d
-              open(p, "w", encoding="utf-8").write(txt)
+          import glob, re
+
+          def fix_braces(s):
+              d = s.count("{") - s.count("}")
+              return s + ("\n" + "}\n" * d if d > 0 else "")
+
+          for g in glob.glob("project_src/**/*.gradle*", recursive=True):
+              t = open(g, encoding="utf-8", errors="ignore").read()
+              open(g, "w", encoding="utf-8").write(fix_braces(t))
+
+          for j in glob.glob("project_src/**/MainActivity.java", recursive=True):
+              t = open(j, encoding="utf-8", errors="ignore").read()
+              t = t.replace("window.setDecorFitsSystemWindows(false);", "window.setDecorFitsSystemWindows(true);")
+              t = t.replace("| View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN", "")
+              stop_fn = '@JavascriptInterface public void stopFloatingOverlay() { stopService(new Intent(MainActivity.this, FloatingOverlayService.class)); }\n        @JavascriptInterface\n        public void launchWexMobile'
+              if "stopFloatingOverlay" not in t:
+                  t = t.replace("@JavascriptInterface\n        public void launchWexMobile", stop_fn)
+              open(j, "w", encoding="utf-8").write(fix_braces(t))
+
+          for j in glob.glob("project_src/**/FloatingOverlayService.java", recursive=True):
+              t = open(j, encoding="utf-8", errors="ignore").read()
+              t = re.sub(r'closeBtn\.setText\("[^"\n;]*\n\s*closeBtn\.setTextColor', 'closeBtn.setText("X");\n        closeBtn.setTextColor', t)
+              t = t.replace("WindowManager.LayoutParams.MATCH_PARENT,\n                WindowManager.LayoutParams.MATCH_PARENT,", "dpToPx(96),\n                dpToPx(96),")
+              t = t.replace("startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);", "try { startForeground(NOTIFICATION_ID, notification, 1073741824); } catch (Exception e) { startForeground(NOTIFICATION_ID, notification); }")
+              open(j, "w", encoding="utf-8").write(fix_braces(t))
+
+          for h in glob.glob("project_src/**/index.html", recursive=True):
+              html = open(h, encoding="utf-8", errors="ignore").read()
+              html = html.replace('<script type="module" src="/@vite/client"></script>', '')
+              html = html.replace('<script src="/_aistudio-iframe.js?v=1f94f900"></script>', '')
+              html = re.sub(r"t\.batteryTempC \+ '[^'\n;]*document\.getElementById\('topBattery'\)", "t.batteryTempC + ' C';\n      document.getElementById('topBattery')", html)
+              html = re.sub(r"t\.batteryTempC \+ '[^'\n;]*const tempPercent", "t.batteryTempC + ' C';\n      const tempPercent", html)
+              html = html.replace("if (type === 'overlay') syncReticleToService();", "if (type === 'overlay') { if (state.overlay) syncReticleToService(); else if (state.isNativeBridge && window.AndroidBridge.stopFloatingOverlay) window.AndroidBridge.stopFloatingOverlay(); }")
+              open(h, "w", encoding="utf-8").write(html)
           EOF
 
       - name: Setup Java 17
@@ -56,9 +67,7 @@ jobs:
 
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          set -o pipefail
-          gradle assembleDebug --no-daemon 2>&1 | tee build.log || { echo "=== EXACT ERRORS ==="; grep -n -C 3 "error:" build.log | tail -n 30; exit 1; }
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
