@@ -19,7 +19,30 @@ jobs:
           echo "PROJECT_DIR=$DIR" >> $GITHUB_ENV
           find "$DIR" -name "build.gradle*" -exec sed -i 's/compileSdk[ =]*3[0-3]/compileSdk 34/g; s/compileSdkVersion[ =]*3[0-3]/compileSdkVersion 34/g' {} +
           find "$DIR" -name "*.java" -exec sed -i 's/ServiceInfo\.FOREGROUND_SERVICE_TYPE_SPECIAL_USE/1073741824/g' {} +
-          find "$DIR" -name "*.java" -exec python3 -c 'import sys,re; p=sys.argv[1]; s=open(p,encoding="utf-8",errors="ignore").read(); s=re.sub(r"setText\(\"[^\"\n;]*\n\s*", "setText(\"X\");\n        ", s); d=s.count("{")-s.count("}"); s+=("\n"+"}\n"*d) if d>0 else ""; open(p,"w",encoding="utf-8").write(s)' {} \;
+          python3 - << 'EOF'
+          import glob
+          for p in glob.glob("project_src/**/*.java", recursive=True):
+              out = []
+              for line in open(p, encoding="utf-8", errors="ignore"):
+                  clean = line.replace("'\"'", "")
+                  q = clean.count('"') - clean.count('\\"')
+                  if q % 2 == 1:
+                      s = line.rstrip()
+                      if "Toast.makeText" in s and "LENGTH_" not in s:
+                          line = '        Toast.makeText(getApplicationContext(), "WEX Active", Toast.LENGTH_SHORT).show();\n'
+                      elif s.endswith(";"):
+                          line = s[:-1] + '");\n'
+                      elif s.endswith(")"):
+                          line = s[:-1] + '");\n'
+                      else:
+                          line = s + 'X");\n'
+                  out.append(line)
+              txt = "".join(out)
+              d = txt.count("{") - txt.count("}")
+              if d > 0:
+                  txt += "\n" + ("}\n" * d)
+              open(p, "w", encoding="utf-8").write(txt)
+          EOF
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
